@@ -783,22 +783,28 @@ function buildStatementRows(
     ? buildQuarterlyFlowRows(facts)
     : buildRowsForKind(facts, mode, 'flow');
   const pointRows = buildRowsForKind(facts, mode, 'point');
-  const pointByPeriod = new Map(
-    pointRows
-      .filter((row) => row.report_period)
-      .map((row) => [row.report_period as string, row]),
-  );
+  const mergedByPeriod = new Map<string, FreeUsStatementRow>();
 
-  return sortStatementRows(flowRows.map((row) => {
-    const pointRow = row.report_period ? pointByPeriod.get(row.report_period) : undefined;
-    return {
-      ...row,
-      total_assets: pointRow?.total_assets,
-      total_liabilities: pointRow?.total_liabilities,
-      shareholders_equity: pointRow?.shareholders_equity,
-      cash_and_equivalents: pointRow?.cash_and_equivalents,
-    };
-  }));
+  const mergeRow = (row: FreeUsStatementRow) => {
+    if (!row.report_period) return;
+    const existing = mergedByPeriod.get(row.report_period);
+    mergedByPeriod.set(row.report_period, {
+      ...(existing ?? {}),
+      ...Object.fromEntries(
+        Object.entries(row).filter(([, value]) => value !== undefined),
+      ),
+    });
+  };
+
+  for (const row of pointRows) {
+    mergeRow(row);
+  }
+
+  for (const row of flowRows) {
+    mergeRow(row);
+  }
+
+  return sortStatementRows([...mergedByPeriod.values()]);
 }
 
 function applyReportFilters(

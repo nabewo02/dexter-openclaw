@@ -115,6 +115,11 @@ const DEFAULT_MODEL = process.env.DEXTER_OPENCLAW_MODEL || 'gpt-5.4';
 const MAX_ITERATIONS = 10;
 const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'heartbeat', 'cron', 'memory_update', 'skill']);
 
+function openClawMutationsEnabled(): boolean {
+  const value = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS?.trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
 function normalizeOpenClawToolModel(model: string): string {
   return model.startsWith('openai-codex:') ? model : `openai-codex:${model}`;
 }
@@ -302,7 +307,7 @@ function enhanceFinanceQuery(query: string): string {
 }
 
 function buildToolList(model: string): { toolMap: Map<string, { invoke: (args: Record<string, unknown>) => Promise<unknown> }>; tools: PiTool[] } {
-  const allowMutations = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS === '1';
+  const allowMutations = openClawMutationsEnabled();
   const registered = getToolRegistry(model).filter((entry) => allowMutations || !MUTATING_TOOLS.has(entry.name));
 
   const toolMap = new Map(
@@ -319,7 +324,7 @@ function buildToolList(model: string): { toolMap: Map<string, { invoke: (args: R
 }
 
 function appendBridgeInstructions(systemPrompt: string, toolNames: string[]): string {
-  const mutationMode = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS === '1'
+  const mutationMode = openClawMutationsEnabled()
     ? 'Mutation-capable tools are enabled for this run.'
     : 'This OpenClaw bridge is read-only by default; write/edit/cron/memory mutation tools are disabled unless DEXTER_OPENCLAW_ENABLE_MUTATIONS=1.';
 
