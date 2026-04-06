@@ -29,7 +29,6 @@ const OPENCLAW_MUTATING_TOOL_NAMES = new Set([
   'heartbeat',
   'cron',
   'memory_update',
-  'skill',
 ]);
 
 function openClawMutationsEnabled(): boolean {
@@ -342,11 +341,14 @@ export async function callLlmWithMessages(
   const { model = DEFAULT_MODEL, tools, signal } = options;
 
   if (isOpenClawModel(model)) {
-    const result = await callOpenClawWithMessages(messages, {
-      model,
-      tools: filterOpenClawTools(tools),
-      signal,
-    });
+    const result = await withRetry(
+      () => callOpenClawWithMessages(messages, {
+        model,
+        tools: filterOpenClawTools(tools),
+        signal,
+      }),
+      'OpenClaw Codex',
+    );
     return { response: result.response, usage: result.usage };
   }
 
