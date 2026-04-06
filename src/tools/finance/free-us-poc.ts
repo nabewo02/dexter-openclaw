@@ -189,7 +189,7 @@ export async function getFreeUsPriceSnapshot(ticker: string): Promise<FreeUsPric
 
 export async function getFreeUsFilings(
   ticker: string,
-  forms: string[] = ['10-K', '10-Q', '8-K', '4'],
+  forms?: string[],
   limit = 8,
 ): Promise<FreeUsFiling[]> {
   const upper = ticker.trim().toUpperCase();
@@ -204,7 +204,7 @@ export async function getFreeUsFilings(
   const out: FreeUsFiling[] = [];
   for (let i = 0; i < recent.form.length; i += 1) {
     const form = recent.form[i];
-    if (!forms.includes(form)) continue;
+    if (forms && forms.length > 0 && !forms.includes(form)) continue;
     const accessionNumber = recent.accessionNumber[i];
     const primaryDocument = recent.primaryDocument[i];
     const accessionCompact = String(accessionNumber).replace(/-/g, '');
@@ -561,9 +561,18 @@ function dedupeRowsByReportPeriod(rows: FreeUsStatementRow[]): FreeUsStatementRo
   const byPeriod = new Map<string, FreeUsStatementRow>();
   for (const row of rows) {
     if (!row.report_period) continue;
-    if (!byPeriod.has(row.report_period)) {
+    const existing = byPeriod.get(row.report_period);
+    if (!existing) {
       byPeriod.set(row.report_period, row);
+      continue;
     }
+
+    byPeriod.set(row.report_period, {
+      ...existing,
+      ...Object.fromEntries(
+        Object.entries(row).filter(([, value]) => value !== undefined),
+      ),
+    });
   }
   return sortStatementRows([...byPeriod.values()]);
 }
