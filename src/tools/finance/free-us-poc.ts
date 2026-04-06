@@ -405,16 +405,31 @@ function getFactValues(
   unitKeys: readonly string[],
 ): SecFactValue[] {
   const scopedFacts = facts[namespace] ?? {};
+  const merged = new Map<string, SecFactValue>();
+
   for (const conceptName of conceptNames) {
     const concept = scopedFacts[conceptName];
     for (const unitKey of unitKeys) {
       const values = concept?.units?.[unitKey];
       if (values?.length) {
-        return values;
+        for (const value of values) {
+          const dedupeKey = [
+            value.accn ?? '',
+            value.form ?? '',
+            value.fp ?? '',
+            value.end ?? '',
+            value.filed ?? '',
+            value.frame ?? '',
+            String(value.val),
+          ].join('|');
+          if (!merged.has(dedupeKey)) {
+            merged.set(dedupeKey, value);
+          }
+        }
       }
     }
   }
-  return [];
+  return [...merged.values()];
 }
 
 function sortFactValues(values: SecFactValue[]): SecFactValue[] {

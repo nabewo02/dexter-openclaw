@@ -234,14 +234,17 @@ export async function callLlm(prompt: string, options: CallLlmOptions = {}): Pro
 
   if (isOpenClawModel(model)) {
     const safeTools = filterOpenClawTools(tools);
-    const result = await callOpenClawPrompt({
-      model,
-      prompt,
-      systemPrompt: finalSystemPrompt,
-      outputSchema,
-      tools: safeTools,
-      signal,
-    });
+    const result = await withRetry(
+      () => callOpenClawPrompt({
+        model,
+        prompt,
+        systemPrompt: finalSystemPrompt,
+        outputSchema,
+        tools: safeTools,
+        signal,
+      }),
+      'OpenClaw Codex',
+    );
     return {
       response: result.response as AIMessage | string,
       usage: result.usage,
