@@ -275,10 +275,12 @@ function toolNamesSummary(toolNames: string[]): string {
 
 function isFinanceDataQuery(query: string): boolean {
   const lower = query.toLowerCase();
+  const tickerLike = /\b[A-Z]{2,5}(?:[.-][A-Z])?\b/.test(query)
+    || /aapl|tsla|msft|nvda|meta|amzn|googl|spy|qqq|brk\.b|brk-b|bf\.b|bf-b/.test(lower);
+  const financeIntent = /analysis|compare|rank|ranking|fundamental|price|momentum|growth|margin|revenue|earnings|投資|順位|比較|ファンダ|株価|変化率|成長率|利益率|売上/.test(lower + query);
   return (
-    /\b[A-Z]{1,5}\b/.test(query)
-    || /aapl|tsla|msft|nvda|meta|amzn|googl|spy|qqq/.test(lower)
-  ) && /analysis|compare|rank|ranking|fundamental|price|momentum|growth|margin|revenue|earnings|投資|順位|比較|ファンダ|株価|変化率|成長率|利益率|売上/.test(lower + query);
+    tickerLike && financeIntent
+  );
 }
 
 function enhanceFinanceQuery(query: string): string {

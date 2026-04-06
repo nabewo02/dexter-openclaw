@@ -839,6 +839,11 @@ function computeGrowthRate(current?: number, previous?: number): number | undefi
   return (current - previous) / Math.abs(previous);
 }
 
+function computeRatio(numerator?: number, denominator?: number): number | undefined {
+  if (numerator === undefined || denominator === undefined || denominator === 0) return undefined;
+  return numerator / denominator;
+}
+
 function findComparableRow(rows: FreeUsStatementRow[], target: FreeUsStatementRow): FreeUsStatementRow | undefined {
   if (target.fiscal_period === 'TTM') {
     const idx = rows.indexOf(target);
@@ -1083,11 +1088,9 @@ export async function getFreeUsKeyMetricsSnapshot(ticker: string): Promise<FreeU
     eps,
     revenue_growth_rate: computeGrowthRate(latestQuarter?.revenue, priorComparable?.revenue),
     earnings_growth_rate: computeGrowthRate(latestQuarter?.net_income, priorComparable?.net_income),
-    operating_margin: latestQuarter?.revenue ? (latestQuarter.operating_income ?? 0) / latestQuarter.revenue : undefined,
-    net_margin: latestQuarter?.revenue ? (latestQuarter.net_income ?? 0) / latestQuarter.revenue : undefined,
-    debt_to_equity: latestQuarter?.shareholders_equity
-      ? (latestQuarter.total_liabilities ?? 0) / latestQuarter.shareholders_equity
-      : undefined,
+    operating_margin: computeRatio(latestQuarter?.operating_income, latestQuarter?.revenue),
+    net_margin: computeRatio(latestQuarter?.net_income, latestQuarter?.revenue),
+    debt_to_equity: computeRatio(latestQuarter?.total_liabilities, latestQuarter?.shareholders_equity),
     latest_price: price,
     latest_report_period: latestQuarter?.report_period ?? latestAnnual?.report_period,
     sourceUrls: [priceSnapshot.sourceUrl, factsWithMeta.sourceUrl],
@@ -1140,9 +1143,9 @@ export async function getFreeUsHistoricalKeyMetrics(
       pe_ratio: periodPrice !== undefined && eps !== undefined && eps > 0 ? periodPrice / eps : undefined,
       eps,
       revenue_growth_rate: computeGrowthRate(row.revenue, comparable?.revenue),
-      operating_margin: row.revenue ? (row.operating_income ?? 0) / row.revenue : undefined,
-      net_margin: row.revenue ? (row.net_income ?? 0) / row.revenue : undefined,
-      roe: row.shareholders_equity ? (row.net_income ?? 0) / row.shareholders_equity : undefined,
+      operating_margin: computeRatio(row.operating_income, row.revenue),
+      net_margin: computeRatio(row.net_income, row.revenue),
+      roe: computeRatio(row.net_income, row.shareholders_equity),
     };
   });
 
