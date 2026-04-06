@@ -131,6 +131,8 @@ Notes:
 - If `FINANCIAL_DATASETS_API_KEY` is unset, Dexter now falls back to a **US-only free data mode** for core equity comparison flows using Yahoo Finance `chart`, SEC `company_tickers` / `companyfacts` / `submissions`, and Google News RSS.
 - The free fallback is best for ticker-vs-ticker fundamental comparison, recent price moves, and filing/news context; it is not a full replacement for normalized screener-quality datasets.
 - You can force the fallback explicitly with `DEXTER_FREE_US_MODE=1`.
+- SEC-backed fallback requests require a real contact string for `sec.gov`; set `DEXTER_SEC_USER_AGENT` or `DEXTER_SEC_CONTACT_EMAIL` if you do not want Dexter to infer one from local git config.
+- If your OpenClaw auth store lives outside the default `~/.openclaw/agents/main/agent/auth-profiles.json`, you can point Dexter at it with `OPENCLAW_STATE_DIR`, `OPENCLAW_AGENT_ID`, or `OPENCLAW_AUTH_STORE_PATH`.
 - `EXASEARCH_API_KEY`, `TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, and `X_BEARER_TOKEN` are still optional enhancements.
 - The bridge is read-only by default; file writes, cron changes, heartbeat edits, and memory mutation tools stay disabled unless you set `DEXTER_OPENCLAW_ENABLE_MUTATIONS=1`.
 - The interactive TUI (`bun start`) can also use OpenClaw now: open the provider/model selector and pick **OpenClaw Codex**.

@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
+import { resolveOpenClawAuthStorePath } from '@/utils/openclaw-auth-store';
 
 const OPENCLAW_PROVIDER_ID = 'openai-codex';
 const OPENCLAW_MODEL_PREFIX = 'openai-codex:';
@@ -14,7 +15,6 @@ const OPENCLAW_ROOT_CANDIDATES = [
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
 ].filter((value): value is string => !!value);
-const AUTH_STORE_PATH = path.join(homedir(), '.openclaw/agents/main/agent/auth-profiles.json');
 
 type OAuthProfile = {
   type: 'oauth';
@@ -137,13 +137,13 @@ async function loadOAuthModule(): Promise<OAuthModule> {
   return import(resolvePiAiModulePath('node_modules/@mariozechner/pi-ai/dist/oauth.js')) as Promise<OAuthModule>;
 }
 
-async function loadOAuthStore(): Promise<OAuthStore> {
-  const raw = await readFile(AUTH_STORE_PATH, 'utf8');
+async function loadOAuthStore(authStorePath: string): Promise<OAuthStore> {
+  const raw = await readFile(authStorePath, 'utf8');
   return JSON.parse(raw) as OAuthStore;
 }
 
-async function saveOAuthStore(store: OAuthStore): Promise<void> {
-  await writeFile(AUTH_STORE_PATH, JSON.stringify(store, null, 2) + '\n', 'utf8');
+async function saveOAuthStore(authStorePath: string, store: OAuthStore): Promise<void> {
+  await writeFile(authStorePath, JSON.stringify(store, null, 2) + '\n', 'utf8');
 }
 
 function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
@@ -160,7 +160,8 @@ function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
 }
 
 async function getOpenClawCodexApiKey(): Promise<string> {
-  const store = await loadOAuthStore();
+  const authStorePath = resolveOpenClawAuthStorePath(OPENCLAW_PROVIDER_ID);
+  const store = await loadOAuthStore(authStorePath);
   const candidates = pickCodexProfiles(store);
 
   if (candidates.length === 0) {
@@ -188,7 +189,7 @@ async function getOpenClawCodexApiKey(): Promise<string> {
 
       store.profiles ??= {};
       store.profiles[profileId] = refreshed;
-      await saveOAuthStore(store);
+      await saveOAuthStore(authStorePath, store);
       return auth.apiKey;
     } catch (error) {
       lastError = error;

@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { buildSystemPrompt, loadRulesDocument, loadSoulDocument } from '../src/agent/prompts.js';
 import { getToolRegistry } from '../src/tools/registry.js';
+import { resolveOpenClawAuthStorePath } from '../src/utils/openclaw-auth-store.js';
 
 config({ quiet: true });
 
@@ -104,7 +105,6 @@ const OPENCLAW_ROOT_CANDIDATES = [
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
 ];
-const AUTH_STORE_PATH = path.join(homedir(), '.openclaw/agents/main/agent/auth-profiles.json');
 const DEFAULT_SESSION = 'dexter:openclaw';
 const DEFAULT_MODEL = process.env.DEXTER_OPENCLAW_MODEL || 'gpt-5.4';
 const MAX_ITERATIONS = 10;
@@ -177,13 +177,13 @@ async function loadOAuthModule(): Promise<OAuthModule> {
   return import(href) as Promise<OAuthModule>;
 }
 
-async function loadOAuthStore(): Promise<OAuthStore> {
-  const raw = await readFile(AUTH_STORE_PATH, 'utf8');
+async function loadOAuthStore(authStorePath: string): Promise<OAuthStore> {
+  const raw = await readFile(authStorePath, 'utf8');
   return JSON.parse(raw) as OAuthStore;
 }
 
-async function saveOAuthStore(store: OAuthStore): Promise<void> {
-  await writeFile(AUTH_STORE_PATH, JSON.stringify(store, null, 2) + '\n', 'utf8');
+async function saveOAuthStore(authStorePath: string, store: OAuthStore): Promise<void> {
+  await writeFile(authStorePath, JSON.stringify(store, null, 2) + '\n', 'utf8');
 }
 
 function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
@@ -200,7 +200,8 @@ function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
 }
 
 async function getOpenClawCodexApiKey(): Promise<string> {
-  const store = await loadOAuthStore();
+  const authStorePath = resolveOpenClawAuthStorePath('openai-codex');
+  const store = await loadOAuthStore(authStorePath);
   const candidates = pickCodexProfiles(store);
 
   if (candidates.length === 0) {
@@ -228,7 +229,7 @@ async function getOpenClawCodexApiKey(): Promise<string> {
 
       store.profiles ??= {};
       store.profiles[profileId] = refreshed;
-      await saveOAuthStore(store);
+      await saveOAuthStore(authStorePath, store);
       return auth.apiKey;
     } catch (error) {
       lastError = error;

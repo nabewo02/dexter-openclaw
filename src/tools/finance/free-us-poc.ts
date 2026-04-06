@@ -1,9 +1,55 @@
 import { DOMParser } from 'linkedom';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 
-const SEC_HEADERS = {
-  'User-Agent': 'OpenClaw Dexter Free-US POC openclaw@example.invalid',
-  'Accept-Encoding': 'gzip, deflate',
-} as const;
+function resolveGitConfigUserEmail(startDir = process.cwd()): string | undefined {
+  let currentDir = startDir;
+
+  while (true) {
+    const gitConfigPath = path.join(currentDir, '.git', 'config');
+    if (existsSync(gitConfigPath)) {
+      const raw = readFileSync(gitConfigPath, 'utf8');
+      const userSection = raw.match(/\[user\]([\s\S]*?)(?:\n\[|$)/);
+      const emailMatch = userSection?.[1]?.match(/email\s*=\s*(.+)/);
+      const email = emailMatch?.[1]?.trim();
+      if (email) return email;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+
+  return undefined;
+}
+
+function resolveSecUserAgent(): string {
+  const explicit = process.env.DEXTER_SEC_USER_AGENT?.trim() || process.env.SEC_USER_AGENT?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const contactEmail = process.env.DEXTER_SEC_CONTACT_EMAIL?.trim()
+    || process.env.SEC_CONTACT_EMAIL?.trim()
+    || process.env.GIT_AUTHOR_EMAIL?.trim()
+    || process.env.GIT_COMMITTER_EMAIL?.trim()
+    || resolveGitConfigUserEmail();
+
+  if (!contactEmail) {
+    throw new Error(
+      'SEC-backed Free-US mode requires a contact string. Set DEXTER_SEC_USER_AGENT or DEXTER_SEC_CONTACT_EMAIL.',
+    );
+  }
+
+  return `Dexter Free-US Fallback (${contactEmail})`;
+}
+
+function getSecHeaders() {
+  return {
+    'User-Agent': resolveSecUserAgent(),
+    'Accept-Encoding': 'gzip, deflate',
+  };
+}
 
 const YAHOO_HEADERS = {
   'User-Agent': 'Mozilla/5.0',
@@ -130,7 +176,7 @@ async function getSecTickerMap(): Promise<Map<string, SecTickerEntry>> {
       try {
         const raw = await fetchJson<Record<string, SecTickerEntry>>(
           'https://www.sec.gov/files/company_tickers.json',
-          { headers: SEC_HEADERS },
+          { headers: getSecHeaders() },
         );
         return new Map(Object.values(raw).map((entry) => [entry.ticker.toUpperCase(), entry]));
       } catch (error) {
@@ -195,7 +241,7 @@ export async function getFreeUsFilings(
   const upper = ticker.trim().toUpperCase();
   const { cik } = await resolveSecCompany(upper);
   const sourceUrl = `https://data.sec.gov/submissions/CIK${cik}.json`;
-  const data = await fetchJson<any>(sourceUrl, { headers: SEC_HEADERS });
+  const data = await fetchJson<any>(sourceUrl, { headers: getSecHeaders() });
   const recent = data?.filings?.recent;
   if (!recent) {
     return [];
@@ -370,7 +416,7 @@ export async function getFreeUsFinancialSummary(ticker: string): Promise<FreeUsF
   const upper = ticker.trim().toUpperCase();
   const { cik, companyName } = await resolveSecCompany(upper);
   const sourceUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
-  const data = await fetchJson<CompanyFactsResponse>(sourceUrl, { headers: SEC_HEADERS });
+  const data = await fetchJson<CompanyFactsResponse>(sourceUrl, { headers: getSecHeaders() });
 
   return {
     ticker: upper,
@@ -725,7 +771,7 @@ async function fetchCompanyFactsWithMeta(ticker: string): Promise<{
   const upper = ticker.trim().toUpperCase();
   const { cik, companyName } = await resolveSecCompany(upper);
   const sourceUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
-  const data = await fetchJson<CompanyFactsResponse>(sourceUrl, { headers: SEC_HEADERS });
+  const data = await fetchJson<CompanyFactsResponse>(sourceUrl, { headers: getSecHeaders() });
   return { ticker: upper, cik, companyName, sourceUrl, data };
 }
 
