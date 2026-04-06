@@ -1,5 +1,5 @@
 import { DOMParser } from 'linkedom';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
@@ -15,8 +15,23 @@ function resolveGitConfigUserEmail(startDir = process.cwd()): string | undefined
   let currentDir = startDir;
 
   while (true) {
-    const gitConfigPath = path.join(currentDir, '.git', 'config');
-    if (existsSync(gitConfigPath)) {
+    const gitPath = path.join(currentDir, '.git');
+    if (existsSync(gitPath)) {
+      let gitConfigPath = path.join(gitPath, 'config');
+
+      try {
+        if (lstatSync(gitPath).isFile()) {
+          const raw = readFileSync(gitPath, 'utf8');
+          const match = raw.match(/^gitdir:\s*(.+)$/m);
+          if (match?.[1]) {
+            const gitDir = path.resolve(currentDir, match[1].trim());
+            gitConfigPath = path.join(gitDir, 'config');
+          }
+        }
+      } catch {
+        // ignore filesystem edge cases and fall back to default path
+      }
+
       const email = extractEmail(gitConfigPath);
       if (email) return email;
     }
@@ -1107,13 +1122,18 @@ export async function getFreeUsKeyMetricsSnapshot(ticker: string): Promise<FreeU
 
   const quarterlyRows = buildStatementRows(factsWithMeta.data.facts, 'quarterly');
   const annualRows = buildStatementRows(factsWithMeta.data.facts, 'annual');
+  const ttmRows = getPeriodRows(factsWithMeta.data.facts, 'ttm');
   const latestQuarter = quarterlyRows[0];
   const priorComparable = latestQuarter ? findComparableRow(quarterlyRows, latestQuarter) : undefined;
   const latestAnnual = annualRows[0];
+  const latestTtm = ttmRows[0];
   const price = priceSnapshot.regularMarketPrice ?? priceSnapshot.latestBar?.close ?? undefined;
   const sharesOutstanding = latestValue(getShareFacts(factsWithMeta.data.facts, DEI_FACT_ALIASES.sharesOutstanding));
-  const eps = latestAnnual?.earnings_per_share
+  const eps = latestTtm?.earnings_per_share
+    ?? latestTtm?.basic_earnings_per_share
+    ?? latestAnnual?.earnings_per_share
     ?? latestAnnual?.basic_earnings_per_share
+    ?? (latestTtm?.net_income !== undefined && sharesOutstanding ? latestTtm.net_income / sharesOutstanding : undefined)
     ?? (latestAnnual?.net_income !== undefined && sharesOutstanding ? latestAnnual.net_income / sharesOutstanding : undefined);
 
   return {
@@ -1127,7 +1147,7 @@ export async function getFreeUsKeyMetricsSnapshot(ticker: string): Promise<FreeU
     net_margin: computeRatio(latestQuarter?.net_income, latestQuarter?.revenue),
     debt_to_equity: computeRatio(latestQuarter?.total_liabilities, latestQuarter?.shareholders_equity),
     latest_price: price,
-    latest_report_period: latestQuarter?.report_period ?? latestAnnual?.report_period,
+    latest_report_period: latestQuarter?.report_period ?? latestTtm?.report_period ?? latestAnnual?.report_period,
     sourceUrls: [priceSnapshot.sourceUrl, factsWithMeta.sourceUrl],
   };
 }
