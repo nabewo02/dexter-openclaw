@@ -189,15 +189,7 @@ async function saveOAuthStore(authStorePath: string, store: OAuthStore): Promise
 
 function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
   return Object.entries(store.profiles ?? {})
-    .filter(([, profile]) => profile?.provider === 'openai-codex' && profile?.type === 'oauth')
-    .sort((a, b) => {
-      const aExpired = (a[1].expires ?? 0) <= Date.now();
-      const bExpired = (b[1].expires ?? 0) <= Date.now();
-      if (aExpired !== bExpired) {
-        return aExpired ? 1 : -1;
-      }
-      return (b[1].expires ?? 0) - (a[1].expires ?? 0);
-    });
+    .filter(([, profile]) => profile?.provider === 'openai-codex' && profile?.type === 'oauth');
 }
 
 async function getOpenClawCodexApiKey(): Promise<string> {

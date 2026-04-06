@@ -1063,11 +1063,15 @@ export async function getFreeUsHistoricalKeyMetrics(
 ): Promise<{ rows: Record<string, unknown>[]; sourceUrls: string[] }> {
   const upper = ticker.trim().toUpperCase();
   const factsWithMeta = await fetchCompanyFactsWithMeta(upper);
-  const rows = applyReportFilters(getPeriodRows(factsWithMeta.data.facts, period), filters);
+  const allRows = getPeriodRows(factsWithMeta.data.facts, period);
+  const filteredRows = applyReportFilters(allRows, {
+    ...filters,
+    limit: undefined,
+  });
 
   let historicalPrices: Array<PriceBar & { ticker: string }> = [];
   let priceSourceUrl: string | undefined;
-  const reportDates = rows.map((row) => row.report_period).filter((value): value is string => Boolean(value));
+  const reportDates = filteredRows.map((row) => row.report_period).filter((value): value is string => Boolean(value));
   if (reportDates.length > 0) {
     const sortedDates = [...reportDates].sort();
     const history = await getFreeUsPriceHistory(
@@ -1080,8 +1084,8 @@ export async function getFreeUsHistoricalKeyMetrics(
     priceSourceUrl = history.sourceUrl;
   }
 
-  const out = rows.map((row) => {
-    const comparable = findComparableRow(rows, row);
+  const out = filteredRows.map((row) => {
+    const comparable = findComparableRow(allRows, row);
     const eps = row.earnings_per_share ?? row.basic_earnings_per_share;
     const periodPrice = row.report_period ? findClosestClose(historicalPrices, row.report_period) : undefined;
     return {
@@ -1096,7 +1100,10 @@ export async function getFreeUsHistoricalKeyMetrics(
     };
   });
 
-  return { rows: out, sourceUrls: priceSourceUrl ? [priceSourceUrl, factsWithMeta.sourceUrl] : [factsWithMeta.sourceUrl] };
+  return {
+    rows: out.slice(0, filters.limit ?? out.length),
+    sourceUrls: priceSourceUrl ? [priceSourceUrl, factsWithMeta.sourceUrl] : [factsWithMeta.sourceUrl],
+  };
 }
 
 export async function getFreeUsEarningsSnapshot(ticker: string): Promise<{ data: Record<string, unknown>; sourceUrls: string[] }> {
