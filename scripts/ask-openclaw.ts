@@ -102,9 +102,10 @@ type OAuthModule = {
 };
 
 const OPENCLAW_ROOT_CANDIDATES = [
+  process.env.OPENCLAW_ROOT,
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
-];
+].filter((value): value is string => !!value);
 const DEFAULT_SESSION = 'dexter:openclaw';
 const DEFAULT_MODEL = process.env.DEXTER_OPENCLAW_MODEL || 'gpt-5.4';
 const MAX_ITERATIONS = 10;

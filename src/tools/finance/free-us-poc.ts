@@ -191,7 +191,14 @@ async function getSecTickerMap(): Promise<Map<string, SecTickerEntry>> {
 async function resolveSecCompany(ticker: string): Promise<{ cik: string; companyName: string }> {
   const upper = ticker.trim().toUpperCase();
   const map = await getSecTickerMap();
-  const entry = map.get(upper);
+  const candidates = [...new Set([
+    upper,
+    upper.replace(/\./g, '-'),
+    upper.replace(/-/g, '.'),
+  ])];
+  const entry = candidates
+    .map((candidate) => map.get(candidate))
+    .find((value): value is SecTickerEntry => Boolean(value));
   if (!entry) {
     throw new Error(`Ticker not found in SEC company_tickers.json: ${upper}`);
   }
