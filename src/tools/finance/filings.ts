@@ -1,7 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { api, shouldUseFreeUsData } from './api.js';
-import { getFreeUsFilings } from './free-us-poc.js';
+import { getFreeUsFilingsResult } from './free-us-poc.js';
 import { formatToolResult } from '../types.js';
 import { TTL_24H } from './utils.js';
 
@@ -61,8 +61,8 @@ export const getFilings = new DynamicStructuredTool({
   schema: FilingsInputSchema,
   func: async (input) => {
     if (shouldUseFreeUsData()) {
-      const filings = await getFreeUsFilings(input.ticker.trim().toUpperCase(), input.filing_type, input.limit);
-      return formatToolResult(filings, [`https://data.sec.gov/submissions/CIK*.json for ${input.ticker.trim().toUpperCase()}`]);
+      const result = await getFreeUsFilingsResult(input.ticker.trim().toUpperCase(), input.filing_type, input.limit);
+      return formatToolResult(result.filings, [result.sourceUrl]);
     }
     const params: Record<string, string | number | string[] | undefined> = {
       ticker: input.ticker,

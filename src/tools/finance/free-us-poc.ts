@@ -131,6 +131,11 @@ export interface FreeUsPocReport {
   news: FreeUsNewsItem[];
 }
 
+export interface FreeUsFilingsResult {
+  filings: FreeUsFiling[];
+  sourceUrl: string;
+}
+
 interface SecTickerEntry {
   cik_str: number;
   ticker: string;
@@ -247,18 +252,18 @@ export async function getFreeUsPriceSnapshot(ticker: string): Promise<FreeUsPric
   };
 }
 
-export async function getFreeUsFilings(
+export async function getFreeUsFilingsResult(
   ticker: string,
   forms?: string[],
   limit = 8,
-): Promise<FreeUsFiling[]> {
+): Promise<FreeUsFilingsResult> {
   const upper = ticker.trim().toUpperCase();
   const { cik } = await resolveSecCompany(upper);
   const sourceUrl = `https://data.sec.gov/submissions/CIK${cik}.json`;
   const data = await fetchJson<any>(sourceUrl, { headers: getSecHeaders() });
   const recent = data?.filings?.recent;
   if (!recent) {
-    return [];
+    return { filings: [], sourceUrl };
   }
 
   const out: FreeUsFiling[] = [];
@@ -279,7 +284,16 @@ export async function getFreeUsFilings(
     if (out.length >= limit) break;
   }
 
-  return out;
+  return { filings: out, sourceUrl };
+}
+
+export async function getFreeUsFilings(
+  ticker: string,
+  forms?: string[],
+  limit = 8,
+): Promise<FreeUsFiling[]> {
+  const result = await getFreeUsFilingsResult(ticker, forms, limit);
+  return result.filings;
 }
 
 const FACT_ALIASES = {
@@ -476,9 +490,9 @@ export async function getFreeUsNews(ticker: string, limit = 5): Promise<FreeUsNe
 export async function buildFreeUsPocReport(ticker: string): Promise<FreeUsPocReport> {
   const upper = ticker.trim().toUpperCase();
   const { cik, companyName } = await resolveSecCompany(upper);
-  const [price, filings, financials, news] = await Promise.all([
+  const [price, filingsResult, financials, news] = await Promise.all([
     getFreeUsPriceSnapshot(upper),
-    getFreeUsFilings(upper),
+    getFreeUsFilingsResult(upper),
     getFreeUsFinancialSummary(upper),
     getFreeUsNews(upper),
   ]);
@@ -488,7 +502,7 @@ export async function buildFreeUsPocReport(ticker: string): Promise<FreeUsPocRep
     companyName,
     cik,
     price,
-    filings,
+    filings: filingsResult.filings,
     financials,
     news,
   };
@@ -1068,10 +1082,11 @@ export async function getFreeUsHistoricalKeyMetrics(
     ...filters,
     limit: undefined,
   });
+  const resultRows = filteredRows.slice(0, filters.limit ?? filteredRows.length);
 
   let historicalPrices: Array<PriceBar & { ticker: string }> = [];
   let priceSourceUrl: string | undefined;
-  const reportDates = filteredRows.map((row) => row.report_period).filter((value): value is string => Boolean(value));
+  const reportDates = resultRows.map((row) => row.report_period).filter((value): value is string => Boolean(value));
   if (reportDates.length > 0) {
     const sortedDates = [...reportDates].sort();
     const history = await getFreeUsPriceHistory(
@@ -1084,7 +1099,7 @@ export async function getFreeUsHistoricalKeyMetrics(
     priceSourceUrl = history.sourceUrl;
   }
 
-  const out = filteredRows.map((row) => {
+  const out = resultRows.map((row) => {
     const comparable = findComparableRow(allRows, row);
     const eps = row.earnings_per_share ?? row.basic_earnings_per_share;
     const periodPrice = row.report_period ? findClosestClose(historicalPrices, row.report_period) : undefined;
@@ -1101,7 +1116,7 @@ export async function getFreeUsHistoricalKeyMetrics(
   });
 
   return {
-    rows: out.slice(0, filters.limit ?? out.length),
+    rows: out,
     sourceUrls: priceSourceUrl ? [priceSourceUrl, factsWithMeta.sourceUrl] : [factsWithMeta.sourceUrl],
   };
 }
