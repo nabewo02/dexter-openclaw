@@ -38,7 +38,6 @@ const OPENCLAW_MUTATING_TOOL_NAMES = new Set([
   'heartbeat',
   'cron',
   'memory_update',
-  'skill',
 ]);
 
 function openClawMutationsEnabled(): boolean {

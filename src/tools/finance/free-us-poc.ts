@@ -782,7 +782,15 @@ function buildStatementRows(
   const flowRows = mode === 'quarterly'
     ? buildQuarterlyFlowRows(facts)
     : buildRowsForKind(facts, mode, 'flow');
-  const pointRows = buildRowsForKind(facts, mode, 'point');
+  const pointRows = mode === 'quarterly'
+    ? dedupeRowsByReportPeriod([
+        ...buildRowsForKind(facts, 'quarterly', 'point'),
+        ...buildRowsForKind(facts, 'annual', 'point').map((row) => ({
+          ...row,
+          fiscal_period: row.fiscal_period === 'FY' ? 'Q4' : row.fiscal_period,
+        })),
+      ])
+    : buildRowsForKind(facts, mode, 'point');
   const mergedByPeriod = new Map<string, FreeUsStatementRow>();
 
   const mergeRow = (row: FreeUsStatementRow) => {
