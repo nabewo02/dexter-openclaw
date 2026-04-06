@@ -127,11 +127,16 @@ async function fetchText(url: string, init?: RequestInit): Promise<string> {
 async function getSecTickerMap(): Promise<Map<string, SecTickerEntry>> {
   if (!secTickerMapPromise) {
     secTickerMapPromise = (async () => {
-      const raw = await fetchJson<Record<string, SecTickerEntry>>(
-        'https://www.sec.gov/files/company_tickers.json',
-        { headers: SEC_HEADERS },
-      );
-      return new Map(Object.values(raw).map((entry) => [entry.ticker.toUpperCase(), entry]));
+      try {
+        const raw = await fetchJson<Record<string, SecTickerEntry>>(
+          'https://www.sec.gov/files/company_tickers.json',
+          { headers: SEC_HEADERS },
+        );
+        return new Map(Object.values(raw).map((entry) => [entry.ticker.toUpperCase(), entry]));
+      } catch (error) {
+        secTickerMapPromise = null;
+        throw error;
+      }
     })();
   }
   return secTickerMapPromise;
@@ -434,6 +439,12 @@ function toUnixSeconds(date: string, mode: 'start' | 'end' = 'start'): number {
   return Math.floor(Date.parse(`${date}${suffix}`) / 1000);
 }
 
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 function mapIntervalToYahoo(interval: 'day' | 'week' | 'month' | 'year'): string {
   switch (interval) {
     case 'day': return '1d';
@@ -501,9 +512,34 @@ function factRowKey(value: SecFactValue): string {
   return [value.form ?? '', value.fp ?? '', value.end ?? '', value.filed ?? ''].join('|');
 }
 
-function buildStatementRows(
+type RowKind = 'flow' | 'point';
+
+function sortStatementRows(rows: FreeUsStatementRow[]): FreeUsStatementRow[] {
+  return [...rows].sort((a, b) => {
+    const aPeriod = a.report_period ?? '';
+    const bPeriod = b.report_period ?? '';
+    if (aPeriod !== bPeriod) return bPeriod.localeCompare(aPeriod);
+    const aFiled = a.filed_date ?? '';
+    const bFiled = b.filed_date ?? '';
+    return bFiled.localeCompare(aFiled);
+  });
+}
+
+function dedupeRowsByReportPeriod(rows: FreeUsStatementRow[]): FreeUsStatementRow[] {
+  const byPeriod = new Map<string, FreeUsStatementRow>();
+  for (const row of rows) {
+    if (!row.report_period) continue;
+    if (!byPeriod.has(row.report_period)) {
+      byPeriod.set(row.report_period, row);
+    }
+  }
+  return sortStatementRows([...byPeriod.values()]);
+}
+
+function buildRowsForKind(
   facts: CompanyFactsResponse['facts'],
   mode: 'annual' | 'quarterly',
+  rowKind: RowKind,
 ): FreeUsStatementRow[] {
   const rows = new Map<string, FreeUsStatementRow>();
 
@@ -528,28 +564,91 @@ function buildStatementRows(
     }
   };
 
-  addField('revenue', getUsdFacts(facts, FACT_ALIASES.revenue), 'flow');
-  addField('operating_income', getUsdFacts(facts, FACT_ALIASES.operatingIncome), 'flow');
-  addField('net_income', getUsdFacts(facts, FACT_ALIASES.netIncome), 'flow');
-  addField('operating_cash_flow', getUsdFacts(facts, FACT_ALIASES.operatingCashFlow), 'flow');
-  addField('capital_expenditure', getUsdFacts(facts, FACT_ALIASES.capitalExpenditure), 'flow');
-  addField('earnings_per_share', getPerShareFacts(facts, FACT_ALIASES.epsDiluted), 'flow');
-  addField('basic_earnings_per_share', getPerShareFacts(facts, FACT_ALIASES.epsBasic), 'flow');
-  addField('total_assets', getUsdFacts(facts, FACT_ALIASES.assets), 'point');
-  addField('total_liabilities', getUsdFacts(facts, FACT_ALIASES.totalLiabilities), 'point');
-  addField('shareholders_equity', getUsdFacts(facts, FACT_ALIASES.shareholdersEquity), 'point');
-  addField('cash_and_equivalents', getUsdFacts(facts, FACT_ALIASES.cashAndEquivalents), 'point');
+  if (rowKind === 'flow') {
+    addField('revenue', getUsdFacts(facts, FACT_ALIASES.revenue), 'flow');
+    addField('operating_income', getUsdFacts(facts, FACT_ALIASES.operatingIncome), 'flow');
+    addField('net_income', getUsdFacts(facts, FACT_ALIASES.netIncome), 'flow');
+    addField('operating_cash_flow', getUsdFacts(facts, FACT_ALIASES.operatingCashFlow), 'flow');
+    addField('capital_expenditure', getUsdFacts(facts, FACT_ALIASES.capitalExpenditure), 'flow');
+    addField('earnings_per_share', getPerShareFacts(facts, FACT_ALIASES.epsDiluted), 'flow');
+    addField('basic_earnings_per_share', getPerShareFacts(facts, FACT_ALIASES.epsBasic), 'flow');
+  } else {
+    addField('total_assets', getUsdFacts(facts, FACT_ALIASES.assets), 'point');
+    addField('total_liabilities', getUsdFacts(facts, FACT_ALIASES.totalLiabilities), 'point');
+    addField('shareholders_equity', getUsdFacts(facts, FACT_ALIASES.shareholdersEquity), 'point');
+    addField('cash_and_equivalents', getUsdFacts(facts, FACT_ALIASES.cashAndEquivalents), 'point');
+  }
 
-  return [...rows.values()]
+  return dedupeRowsByReportPeriod([...rows.values()]
     .filter((row) => Object.keys(row).some((key) => !['report_period', 'filed_date', 'fiscal_year', 'fiscal_period', 'form'].includes(key)))
-    .sort((a, b) => {
-      const aFiled = a.filed_date ?? a.report_period ?? '';
-      const bFiled = b.filed_date ?? b.report_period ?? '';
-      if (aFiled !== bFiled) return bFiled.localeCompare(aFiled);
-      const aPeriod = a.report_period ?? '';
-      const bPeriod = b.report_period ?? '';
-      return bPeriod.localeCompare(aPeriod);
+  );
+}
+
+function subtractQuarterWindow(
+  annualValue: number | undefined,
+  quarterRows: Array<FreeUsStatementRow | undefined>,
+  field: NumericStatementField,
+): number | undefined {
+  if (annualValue === undefined) return undefined;
+  if (quarterRows.some((row) => row?.[field] === undefined)) return undefined;
+  return annualValue - quarterRows.reduce((sum, row) => sum + Number(row?.[field] ?? 0), 0);
+}
+
+function buildQuarterlyFlowRows(facts: CompanyFactsResponse['facts']): FreeUsStatementRow[] {
+  const quarterlyRows = buildRowsForKind(facts, 'quarterly', 'flow');
+  const annualRows = buildRowsForKind(facts, 'annual', 'flow');
+  const derivedQ4Rows: FreeUsStatementRow[] = [];
+
+  for (const annualRow of annualRows) {
+    if (!annualRow.report_period || annualRow.fiscal_year === undefined) continue;
+    const q1 = quarterlyRows.find((row) => row.fiscal_year === annualRow.fiscal_year && row.fiscal_period === 'Q1');
+    const q2 = quarterlyRows.find((row) => row.fiscal_year === annualRow.fiscal_year && row.fiscal_period === 'Q2');
+    const q3 = quarterlyRows.find((row) => row.fiscal_year === annualRow.fiscal_year && row.fiscal_period === 'Q3');
+    if (!q1 || !q2 || !q3) continue;
+
+    derivedQ4Rows.push({
+      report_period: annualRow.report_period,
+      filed_date: annualRow.filed_date,
+      fiscal_year: annualRow.fiscal_year,
+      fiscal_period: 'Q4',
+      form: '10-K',
+      revenue: subtractQuarterWindow(annualRow.revenue, [q1, q2, q3], 'revenue'),
+      operating_income: subtractQuarterWindow(annualRow.operating_income, [q1, q2, q3], 'operating_income'),
+      net_income: subtractQuarterWindow(annualRow.net_income, [q1, q2, q3], 'net_income'),
+      earnings_per_share: subtractQuarterWindow(annualRow.earnings_per_share, [q1, q2, q3], 'earnings_per_share'),
+      basic_earnings_per_share: subtractQuarterWindow(annualRow.basic_earnings_per_share, [q1, q2, q3], 'basic_earnings_per_share'),
+      operating_cash_flow: subtractQuarterWindow(annualRow.operating_cash_flow, [q1, q2, q3], 'operating_cash_flow'),
+      capital_expenditure: subtractQuarterWindow(annualRow.capital_expenditure, [q1, q2, q3], 'capital_expenditure'),
     });
+  }
+
+  return dedupeRowsByReportPeriod([...quarterlyRows, ...derivedQ4Rows]);
+}
+
+function buildStatementRows(
+  facts: CompanyFactsResponse['facts'],
+  mode: 'annual' | 'quarterly',
+): FreeUsStatementRow[] {
+  const flowRows = mode === 'quarterly'
+    ? buildQuarterlyFlowRows(facts)
+    : buildRowsForKind(facts, mode, 'flow');
+  const pointRows = buildRowsForKind(facts, mode, 'point');
+  const pointByPeriod = new Map(
+    pointRows
+      .filter((row) => row.report_period)
+      .map((row) => [row.report_period as string, row]),
+  );
+
+  return sortStatementRows(flowRows.map((row) => {
+    const pointRow = row.report_period ? pointByPeriod.get(row.report_period) : undefined;
+    return {
+      ...row,
+      total_assets: pointRow?.total_assets,
+      total_liabilities: pointRow?.total_liabilities,
+      shareholders_equity: pointRow?.shareholders_equity,
+      cash_and_equivalents: pointRow?.cash_and_equivalents,
+    };
+  }));
 }
 
 function applyReportFilters(
@@ -597,6 +696,12 @@ function computeGrowthRate(current?: number, previous?: number): number | undefi
 }
 
 function findComparableRow(rows: FreeUsStatementRow[], target: FreeUsStatementRow): FreeUsStatementRow | undefined {
+  if (target.fiscal_period === 'TTM') {
+    const idx = rows.indexOf(target);
+    if (idx >= 0 && idx + 4 < rows.length) return rows[idx + 4];
+    return undefined;
+  }
+
   const targetYear = target.fiscal_year;
   const targetPeriod = target.fiscal_period;
   const samePeriodPriorYear = rows.find((row) =>
@@ -610,6 +715,85 @@ function findComparableRow(rows: FreeUsStatementRow[], target: FreeUsStatementRo
 
 function latestValue(values: SecFactValue[]): number | undefined {
   return sortFactValues(values).find((value) => typeof value.val === 'number')?.val;
+}
+
+type NumericStatementField =
+  | 'revenue'
+  | 'operating_income'
+  | 'net_income'
+  | 'earnings_per_share'
+  | 'basic_earnings_per_share'
+  | 'operating_cash_flow'
+  | 'capital_expenditure';
+
+function sumField(window: FreeUsStatementRow[], field: NumericStatementField): number | undefined {
+  const values = window.map((row) => row[field]);
+  if (values.some((value) => value === undefined)) return undefined;
+  const definedValues = values as number[];
+  return definedValues.reduce((sum, value) => sum + value, 0);
+}
+
+function buildTtmRows(quarterlyRows: FreeUsStatementRow[]): FreeUsStatementRow[] {
+  const ttmRows: FreeUsStatementRow[] = [];
+
+  for (let i = 0; i + 3 < quarterlyRows.length; i += 1) {
+    const anchor = quarterlyRows[i];
+    const window = quarterlyRows.slice(i, i + 4);
+
+    ttmRows.push({
+      report_period: anchor.report_period,
+      filed_date: anchor.filed_date,
+      fiscal_year: anchor.fiscal_year,
+      fiscal_period: 'TTM',
+      form: 'TTM',
+      revenue: sumField(window, 'revenue'),
+      operating_income: sumField(window, 'operating_income'),
+      net_income: sumField(window, 'net_income'),
+      earnings_per_share: sumField(window, 'earnings_per_share'),
+      basic_earnings_per_share: sumField(window, 'basic_earnings_per_share'),
+      operating_cash_flow: sumField(window, 'operating_cash_flow'),
+      capital_expenditure: sumField(window, 'capital_expenditure'),
+      total_assets: anchor.total_assets,
+      total_liabilities: anchor.total_liabilities,
+      shareholders_equity: anchor.shareholders_equity,
+      cash_and_equivalents: anchor.cash_and_equivalents,
+    });
+  }
+
+  return ttmRows;
+}
+
+function getPeriodRows(
+  facts: CompanyFactsResponse['facts'],
+  period: 'annual' | 'quarterly' | 'ttm',
+): FreeUsStatementRow[] {
+  if (period === 'annual') {
+    return buildStatementRows(facts, 'annual');
+  }
+
+  const quarterlyRows = buildStatementRows(facts, 'quarterly');
+  if (period === 'quarterly') {
+    return quarterlyRows;
+  }
+
+  return buildTtmRows(quarterlyRows);
+}
+
+function findClosestClose(
+  prices: Array<PriceBar & { ticker: string }>,
+  targetDate: string,
+): number | undefined {
+  const onOrAfter = prices.find((price) => price.date >= targetDate && price.close !== null);
+  if (onOrAfter?.close !== null && onOrAfter?.close !== undefined) {
+    return onOrAfter.close;
+  }
+
+  const onOrBefore = [...prices].reverse().find((price) => price.date <= targetDate && price.close !== null);
+  if (onOrBefore?.close !== null && onOrBefore?.close !== undefined) {
+    return onOrBefore.close;
+  }
+
+  return undefined;
 }
 
 export async function getFreeUsTickers(): Promise<string[]> {
@@ -664,9 +848,8 @@ export async function getFreeUsStatementData(
   cashFlowStatements: FreeUsStatementRow[];
   sourceUrl: string;
 }> {
-  const normalizedPeriod = period === 'annual' ? 'annual' : 'quarterly';
   const { sourceUrl, data } = await fetchCompanyFactsWithMeta(ticker);
-  const rows = applyReportFilters(buildStatementRows(data.facts, normalizedPeriod), filters);
+  const rows = applyReportFilters(getPeriodRows(data.facts, period), filters);
 
   const incomeStatements = rows.map((row) => ({
     report_period: row.report_period,
@@ -760,21 +943,32 @@ export async function getFreeUsHistoricalKeyMetrics(
   } = {},
 ): Promise<{ rows: Record<string, unknown>[]; sourceUrls: string[] }> {
   const upper = ticker.trim().toUpperCase();
-  const normalizedPeriod = period === 'annual' ? 'annual' : 'quarterly';
-  const [priceSnapshot, factsWithMeta] = await Promise.all([
-    getFreeUsPriceSnapshot(upper),
-    fetchCompanyFactsWithMeta(upper),
-  ]);
-  const rows = applyReportFilters(buildStatementRows(factsWithMeta.data.facts, normalizedPeriod), filters);
-  const currentPrice = priceSnapshot.regularMarketPrice ?? priceSnapshot.latestBar?.close ?? undefined;
+  const factsWithMeta = await fetchCompanyFactsWithMeta(upper);
+  const rows = applyReportFilters(getPeriodRows(factsWithMeta.data.facts, period), filters);
+
+  let historicalPrices: Array<PriceBar & { ticker: string }> = [];
+  let priceSourceUrl: string | undefined;
+  const reportDates = rows.map((row) => row.report_period).filter((value): value is string => Boolean(value));
+  if (reportDates.length > 0) {
+    const sortedDates = [...reportDates].sort();
+    const history = await getFreeUsPriceHistory(
+      upper,
+      'day',
+      sortedDates[0],
+      addDays(sortedDates[sortedDates.length - 1], 10),
+    );
+    historicalPrices = history.prices;
+    priceSourceUrl = history.sourceUrl;
+  }
 
   const out = rows.map((row) => {
     const comparable = findComparableRow(rows, row);
     const eps = row.earnings_per_share ?? row.basic_earnings_per_share;
+    const periodPrice = row.report_period ? findClosestClose(historicalPrices, row.report_period) : undefined;
     return {
       report_period: row.report_period,
       date: row.report_period,
-      pe_ratio: currentPrice !== undefined && eps !== undefined && eps > 0 ? currentPrice / eps : undefined,
+      pe_ratio: periodPrice !== undefined && eps !== undefined && eps > 0 ? periodPrice / eps : undefined,
       eps,
       revenue_growth_rate: computeGrowthRate(row.revenue, comparable?.revenue),
       operating_margin: row.revenue ? (row.operating_income ?? 0) / row.revenue : undefined,
@@ -783,7 +977,7 @@ export async function getFreeUsHistoricalKeyMetrics(
     };
   });
 
-  return { rows: out, sourceUrls: [priceSnapshot.sourceUrl, factsWithMeta.sourceUrl] };
+  return { rows: out, sourceUrls: priceSourceUrl ? [priceSourceUrl, factsWithMeta.sourceUrl] : [factsWithMeta.sourceUrl] };
 }
 
 export async function getFreeUsEarningsSnapshot(ticker: string): Promise<{ data: Record<string, unknown>; sourceUrls: string[] }> {
