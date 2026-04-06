@@ -32,6 +32,28 @@ export interface RegisteredTool {
   concurrencySafe: boolean;
 }
 
+const OPENCLAW_MUTATING_TOOL_NAMES = new Set([
+  'write_file',
+  'edit_file',
+  'heartbeat',
+  'cron',
+  'memory_update',
+  'skill',
+]);
+
+function openClawMutationsEnabled(): boolean {
+  const value = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS?.trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function filterRegistryForModel(model: string, tools: RegisteredTool[]): RegisteredTool[] {
+  if (!model.startsWith('openai-codex:') || openClawMutationsEnabled()) {
+    return tools;
+  }
+
+  return tools.filter((tool) => !OPENCLAW_MUTATING_TOOL_NAMES.has(tool.name));
+}
+
 /**
  * Get all registered tools with their descriptions.
  * Conditionally includes tools based on environment configuration.
@@ -189,7 +211,7 @@ export function getToolRegistry(model: string): RegisteredTool[] {
     });
   }
 
-  return tools;
+  return filterRegistryForModel(model, tools);
 }
 
 /**

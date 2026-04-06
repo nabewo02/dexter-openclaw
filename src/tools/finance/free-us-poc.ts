@@ -493,8 +493,14 @@ function decodeHtmlEntities(input: string): string {
 
 export async function getFreeUsNewsResult(ticker: string, limit = 5): Promise<FreeUsNewsResult> {
   const upper = ticker.trim().toUpperCase();
-  const { companyName } = await resolveSecCompany(upper);
-  const query = encodeURIComponent(`"${companyName}" OR ${upper}`);
+  let queryText = upper;
+  try {
+    const { companyName } = await resolveSecCompany(upper);
+    queryText = `"${companyName}" OR ${upper}`;
+  } catch {
+    queryText = upper;
+  }
+  const query = encodeURIComponent(queryText);
   const sourceUrl = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
   const xml = await fetchText(sourceUrl, { headers: YAHOO_HEADERS });
   const document = new DOMParser().parseFromString(xml, 'text/xml');
