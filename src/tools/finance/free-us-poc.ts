@@ -77,11 +77,11 @@ export interface FreeUsPriceSnapshot {
 
 export interface FreeUsFiling {
   form: string;
-  filedAt: string;
-  accessionNumber: string;
-  primaryDocument: string;
+  filed_at: string;
+  accession_number: string;
+  primary_document: string;
   description?: string;
-  secUrl: string;
+  sec_url: string;
 }
 
 export interface FinancialPoint {
@@ -112,6 +112,13 @@ export interface FreeUsNewsItem {
   link: string;
   publishedAt?: string;
   source?: string;
+}
+
+function normalizeRssPubDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  return new Date(parsed).toISOString();
 }
 
 export interface FreeUsPocReport {
@@ -263,11 +270,11 @@ export async function getFreeUsFilings(
     const accessionCompact = String(accessionNumber).replace(/-/g, '');
     out.push({
       form,
-      filedAt: recent.filingDate[i],
-      accessionNumber,
-      primaryDocument,
+      filed_at: recent.filingDate[i],
+      accession_number: accessionNumber,
+      primary_document: primaryDocument,
       description: recent.primaryDocDescription?.[i],
-      secUrl: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accessionCompact}/${primaryDocument}`,
+      sec_url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accessionCompact}/${primaryDocument}`,
     });
     if (out.length >= limit) break;
   }
@@ -461,7 +468,7 @@ export async function getFreeUsNews(ticker: string, limit = 5): Promise<FreeUsNe
   return items.slice(0, limit).map((item) => ({
     title: decodeHtmlEntities(textContent(item.querySelector('title')) ?? ''),
     link: textContent(item.querySelector('link')) ?? '',
-    publishedAt: textContent(item.querySelector('pubDate')),
+    publishedAt: normalizeRssPubDate(textContent(item.querySelector('pubDate'))),
     source: textContent(item.querySelector('source')),
   }));
 }
