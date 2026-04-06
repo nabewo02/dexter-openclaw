@@ -24,6 +24,10 @@ export function resolveOpenClawStateDir(env: NodeJS.ProcessEnv = process.env): s
   return path.join(homedir(), '.openclaw');
 }
 
+export function resolveOpenClawProfileId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.OPENCLAW_AUTH_PROFILE_ID?.trim() || env.OPENCLAW_PROFILE_ID?.trim() || undefined;
+}
+
 function authStorePathForAgent(stateDir: string, agentId: string): string {
   return path.join(stateDir, 'agents', normalizeAgentId(agentId), 'agent', 'auth-profiles.json');
 }

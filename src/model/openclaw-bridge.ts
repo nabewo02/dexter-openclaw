@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { resolveOpenClawAuthStorePath } from '@/utils/openclaw-auth-store';
+import { resolveOpenClawAuthStorePath, resolveOpenClawProfileId } from '@/utils/openclaw-auth-store';
 
 const OPENCLAW_PROVIDER_ID = 'openai-codex';
 const OPENCLAW_MODEL_PREFIX = 'openai-codex:';
@@ -154,7 +154,16 @@ function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
 async function getOpenClawCodexApiKey(): Promise<string> {
   const authStorePath = resolveOpenClawAuthStorePath(OPENCLAW_PROVIDER_ID);
   const store = await loadOAuthStore(authStorePath);
+  const preferredProfileId = resolveOpenClawProfileId();
   const candidates = pickCodexProfiles(store);
+
+  if (preferredProfileId) {
+    const preferred = candidates.find(([profileId]) => profileId === preferredProfileId);
+    if (!preferred) {
+      throw new Error(`Configured OpenClaw auth profile not found: ${preferredProfileId}`);
+    }
+    candidates.splice(0, candidates.length, preferred);
+  }
 
   if (candidates.length === 0) {
     throw new Error('OpenClaw の openai-codex OAuth プロファイルが見つかりません。');
@@ -470,9 +479,8 @@ export async function callOpenClawWithMessages(
 }
 
 export async function* streamOpenClawWithMessages(
-  messages: BaseMessage[],
-  options: OpenClawCallOptions,
+  _messages: BaseMessage[],
+  _options: OpenClawCallOptions,
 ): AsyncGenerator<AIMessageChunk, void> {
-  const response = await completeWithContext(buildPiContext(messages, options.tools), options);
-  yield aiChunkFromPi(response);
+  throw new Error('OpenClaw streaming is not supported; use the blocking LLM path instead.');
 }

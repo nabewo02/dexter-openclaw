@@ -18,7 +18,6 @@ import {
   callOpenClawPrompt,
   callOpenClawWithMessages,
   isOpenClawModel,
-  streamOpenClawWithMessages,
 } from './openclaw-bridge.js';
 
 export const DEFAULT_PROVIDER = 'openai';
@@ -370,8 +369,7 @@ export async function* streamLlmWithMessages(
   const { model = DEFAULT_MODEL, tools, signal } = options;
 
   if (isOpenClawModel(model)) {
-    yield* streamOpenClawWithMessages(messages, { model, tools, signal });
-    return;
+    throw new Error('OpenClaw streaming is not supported; use the blocking LLM path instead.');
   }
 
   const llm = getChatModel(model, true);

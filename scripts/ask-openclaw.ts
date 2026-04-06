@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { buildSystemPrompt, loadRulesDocument, loadSoulDocument } from '../src/agent/prompts.js';
 import { getToolRegistry } from '../src/tools/registry.js';
-import { resolveOpenClawAuthStorePath } from '../src/utils/openclaw-auth-store.js';
+import { resolveOpenClawAuthStorePath, resolveOpenClawProfileId } from '../src/utils/openclaw-auth-store.js';
 
 config({ quiet: true });
 
@@ -199,7 +199,16 @@ function pickCodexProfiles(store: OAuthStore): Array<[string, OAuthProfile]> {
 async function getOpenClawCodexApiKey(): Promise<string> {
   const authStorePath = resolveOpenClawAuthStorePath('openai-codex');
   const store = await loadOAuthStore(authStorePath);
+  const preferredProfileId = resolveOpenClawProfileId();
   const candidates = pickCodexProfiles(store);
+
+  if (preferredProfileId) {
+    const preferred = candidates.find(([profileId]) => profileId === preferredProfileId);
+    if (!preferred) {
+      throw new Error(`Configured OpenClaw auth profile not found: ${preferredProfileId}`);
+    }
+    candidates.splice(0, candidates.length, preferred);
+  }
 
   if (candidates.length === 0) {
     throw new Error('OpenClaw の openai-codex OAuth プロファイルが見つかりません。');
