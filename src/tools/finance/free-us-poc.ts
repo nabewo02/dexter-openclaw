@@ -1,23 +1,39 @@
 import { DOMParser } from 'linkedom';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 
 function resolveGitConfigUserEmail(startDir = process.cwd()): string | undefined {
+  const extractEmail = (configPath: string): string | undefined => {
+    if (!existsSync(configPath)) return undefined;
+    const raw = readFileSync(configPath, 'utf8');
+    const userSection = raw.match(/\[user\]([\s\S]*?)(?:\n\[|$)/);
+    const emailMatch = userSection?.[1]?.match(/email\s*=\s*(.+)/);
+    return emailMatch?.[1]?.trim() || undefined;
+  };
+
   let currentDir = startDir;
 
   while (true) {
     const gitConfigPath = path.join(currentDir, '.git', 'config');
     if (existsSync(gitConfigPath)) {
-      const raw = readFileSync(gitConfigPath, 'utf8');
-      const userSection = raw.match(/\[user\]([\s\S]*?)(?:\n\[|$)/);
-      const emailMatch = userSection?.[1]?.match(/email\s*=\s*(.+)/);
-      const email = emailMatch?.[1]?.trim();
+      const email = extractEmail(gitConfigPath);
       if (email) return email;
     }
 
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir) break;
     currentDir = parentDir;
+  }
+
+  const globalCandidates = [
+    path.join(homedir(), '.gitconfig'),
+    path.join(homedir(), '.config', 'git', 'config'),
+  ];
+
+  for (const candidate of globalCandidates) {
+    const email = extractEmail(candidate);
+    if (email) return email;
   }
 
   return undefined;

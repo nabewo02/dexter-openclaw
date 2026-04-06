@@ -115,6 +115,10 @@ function normalizeOpenClawToolModel(model: string): string {
   return model.startsWith('openai-codex:') ? model : `openai-codex:${model}`;
 }
 
+function normalizeOpenClawModelName(model: string): string {
+  return model.replace(/^openai-codex:/, '');
+}
+
 function parseArgs(argv: string[]): Args {
   let sessionKey = DEFAULT_SESSION;
   let model = DEFAULT_MODEL;
@@ -339,7 +343,7 @@ async function main(): Promise<void> {
     tools.map((tool) => tool.name),
   );
 
-  const model = getModel('openai-codex', args.model);
+  const model = getModel('openai-codex', normalizeOpenClawModelName(toolModel));
   const context: PiContext = {
     systemPrompt,
     messages: [
