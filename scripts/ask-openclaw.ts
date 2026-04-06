@@ -383,7 +383,7 @@ async function main(): Promise<void> {
   const toolModel = normalizeOpenClawToolModel(args.model);
   const { toolMap, tools } = buildToolList(toolModel);
   const systemPrompt = appendBridgeInstructions(
-    buildSystemPrompt(args.model, soul, 'cli', undefined, [], null, rules),
+    buildSystemPrompt(toolModel, soul, 'cli', undefined, [], null, rules),
     tools.map((tool) => tool.name),
   );
 
