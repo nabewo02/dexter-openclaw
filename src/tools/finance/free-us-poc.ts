@@ -450,9 +450,41 @@ function mapIntervalToYahoo(interval: 'day' | 'week' | 'month' | 'year'): string
     case 'day': return '1d';
     case 'week': return '1wk';
     case 'month': return '1mo';
-    case 'year': return '3mo';
+    case 'year': return '1mo';
     default: return '1d';
   }
+}
+
+function aggregateYearlyPrices(prices: Array<PriceBar & { ticker: string }>): Array<PriceBar & { ticker: string }> {
+  const grouped = new Map<string, Array<PriceBar & { ticker: string }>>();
+
+  for (const price of prices) {
+    const year = price.date.slice(0, 4);
+    const bucket = grouped.get(year) ?? [];
+    bucket.push(price);
+    grouped.set(year, bucket);
+  }
+
+  return [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, bucket]) => {
+      const ordered = [...bucket].sort((a, b) => a.date.localeCompare(b.date));
+      const first = ordered[0];
+      const last = ordered[ordered.length - 1];
+      const highs = ordered.map((row) => row.high).filter((value): value is number => value !== null);
+      const lows = ordered.map((row) => row.low).filter((value): value is number => value !== null);
+      const volumes = ordered.map((row) => row.volume).filter((value): value is number => value !== null);
+
+      return {
+        ticker: first.ticker,
+        date: last.date,
+        open: first.open,
+        high: highs.length ? Math.max(...highs) : null,
+        low: lows.length ? Math.min(...lows) : null,
+        close: last.close,
+        volume: volumes.length ? volumes.reduce((sum, value) => sum + value, 0) : null,
+      };
+    });
 }
 
 function durationDays(value: SecFactValue): number | undefined {
@@ -615,8 +647,6 @@ function buildQuarterlyFlowRows(facts: CompanyFactsResponse['facts']): FreeUsSta
       revenue: subtractQuarterWindow(annualRow.revenue, [q1, q2, q3], 'revenue'),
       operating_income: subtractQuarterWindow(annualRow.operating_income, [q1, q2, q3], 'operating_income'),
       net_income: subtractQuarterWindow(annualRow.net_income, [q1, q2, q3], 'net_income'),
-      earnings_per_share: subtractQuarterWindow(annualRow.earnings_per_share, [q1, q2, q3], 'earnings_per_share'),
-      basic_earnings_per_share: subtractQuarterWindow(annualRow.basic_earnings_per_share, [q1, q2, q3], 'basic_earnings_per_share'),
       operating_cash_flow: subtractQuarterWindow(annualRow.operating_cash_flow, [q1, q2, q3], 'operating_cash_flow'),
       capital_expenditure: subtractQuarterWindow(annualRow.capital_expenditure, [q1, q2, q3], 'capital_expenditure'),
     });
@@ -763,6 +793,26 @@ function buildTtmRows(quarterlyRows: FreeUsStatementRow[]): FreeUsStatementRow[]
   return ttmRows;
 }
 
+function attachAnnualTtmEps(
+  ttmRows: FreeUsStatementRow[],
+  annualRows: FreeUsStatementRow[],
+): FreeUsStatementRow[] {
+  const annualByPeriod = new Map(
+    annualRows
+      .filter((row) => row.report_period)
+      .map((row) => [row.report_period as string, row]),
+  );
+
+  return ttmRows.map((row) => {
+    const annualRow = row.report_period ? annualByPeriod.get(row.report_period) : undefined;
+    return {
+      ...row,
+      earnings_per_share: annualRow?.earnings_per_share ?? row.earnings_per_share,
+      basic_earnings_per_share: annualRow?.basic_earnings_per_share ?? row.basic_earnings_per_share,
+    };
+  });
+}
+
 function getPeriodRows(
   facts: CompanyFactsResponse['facts'],
   period: 'annual' | 'quarterly' | 'ttm',
@@ -776,7 +826,7 @@ function getPeriodRows(
     return quarterlyRows;
   }
 
-  return buildTtmRows(quarterlyRows);
+  return attachAnnualTtmEps(buildTtmRows(quarterlyRows), buildRowsForKind(facts, 'annual', 'flow'));
 }
 
 function findClosestClose(
@@ -828,7 +878,7 @@ export async function getFreeUsPriceHistory(
     close: quote.close?.[index] ?? null,
     volume: quote.volume?.[index] ?? null,
   })).filter((bar) => bar.close !== null);
-  return { prices, sourceUrl };
+  return { prices: interval === 'year' ? aggregateYearlyPrices(prices) : prices, sourceUrl };
 }
 
 export async function getFreeUsStatementData(
