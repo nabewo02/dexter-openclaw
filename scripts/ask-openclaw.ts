@@ -137,7 +137,7 @@ function createDefaultSessionKey(): string {
 
 const DEFAULT_MODEL = process.env.DEXTER_OPENCLAW_MODEL || 'gpt-5.4';
 const MAX_ITERATIONS = 10;
-const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'heartbeat', 'cron', 'memory_update', 'skill']);
+const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'heartbeat', 'cron', 'memory_update']);
 
 function openClawMutationsEnabled(): boolean {
   const value = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS?.trim().toLowerCase();
@@ -376,7 +376,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  const apiKey = await getOpenClawCodexApiKey();
   const { complete, getModel } = await loadPiAiModule();
   const soul = await loadSoulDocument();
   const rules = await loadRulesDocument();
@@ -401,6 +400,7 @@ async function main(): Promise<void> {
   };
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration += 1) {
+    const apiKey = await getOpenClawCodexApiKey();
     const response = await complete(model, context, {
       apiKey,
       maxTokens: 4_000,
