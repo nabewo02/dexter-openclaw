@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { config } from 'dotenv';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -106,7 +107,10 @@ const OPENCLAW_ROOT_CANDIDATES = [
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
 ].filter((value): value is string => !!value);
-const DEFAULT_SESSION = 'dexter:openclaw';
+function createDefaultSessionKey(): string {
+  return `dexter:openclaw:${randomUUID()}`;
+}
+
 const DEFAULT_MODEL = process.env.DEXTER_OPENCLAW_MODEL || 'gpt-5.4';
 const MAX_ITERATIONS = 10;
 const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'heartbeat', 'cron', 'memory_update', 'skill']);
@@ -120,7 +124,7 @@ function normalizeOpenClawModelName(model: string): string {
 }
 
 function parseArgs(argv: string[]): Args {
-  let sessionKey = DEFAULT_SESSION;
+  let sessionKey = createDefaultSessionKey();
   let model = DEFAULT_MODEL;
   const queryParts: string[] = [];
 

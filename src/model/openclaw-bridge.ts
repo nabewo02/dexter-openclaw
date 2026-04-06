@@ -388,7 +388,6 @@ async function completeWithContext(context: PiContext, options: OpenClawCallOpti
     signal: options.signal,
     transport: 'sse',
     reasoning: 'high',
-    sessionId: `dexter:${normalizeOpenClawModel(options.model)}`,
   });
 
   if (response.stopReason === 'error' || response.stopReason === 'aborted') {
