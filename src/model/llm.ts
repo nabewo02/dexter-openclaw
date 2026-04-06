@@ -23,6 +23,26 @@ import {
 export const DEFAULT_PROVIDER = 'openai';
 export const DEFAULT_MODEL = 'gpt-5.4';
 
+const OPENCLAW_MUTATING_TOOL_NAMES = new Set([
+  'write_file',
+  'edit_file',
+  'heartbeat',
+  'cron',
+  'memory_update',
+  'skill',
+]);
+
+function openClawMutationsEnabled(): boolean {
+  const value = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS?.trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function filterOpenClawTools(tools?: StructuredToolInterface[]): StructuredToolInterface[] | undefined {
+  if (!tools?.length) return tools;
+  if (openClawMutationsEnabled()) return tools;
+  return tools.filter((tool) => !OPENCLAW_MUTATING_TOOL_NAMES.has(tool.name));
+}
+
 /**
  * Gets the fast model variant for the given provider.
  * Falls back to the provided model if no fast variant is configured (e.g., Ollama).
@@ -214,12 +234,13 @@ export async function callLlm(prompt: string, options: CallLlmOptions = {}): Pro
   const finalSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
 
   if (isOpenClawModel(model)) {
+    const safeTools = filterOpenClawTools(tools);
     const result = await callOpenClawPrompt({
       model,
       prompt,
       systemPrompt: finalSystemPrompt,
       outputSchema,
-      tools,
+      tools: safeTools,
       signal,
     });
     return {
@@ -321,7 +342,11 @@ export async function callLlmWithMessages(
   const { model = DEFAULT_MODEL, tools, signal } = options;
 
   if (isOpenClawModel(model)) {
-    const result = await callOpenClawWithMessages(messages, { model, tools, signal });
+    const result = await callOpenClawWithMessages(messages, {
+      model,
+      tools: filterOpenClawTools(tools),
+      signal,
+    });
     return { response: result.response, usage: result.usage };
   }
 

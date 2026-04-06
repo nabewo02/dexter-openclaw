@@ -671,9 +671,11 @@ function dedupeRowsByReportPeriod(rows: FreeUsStatementRow[]): FreeUsStatementRo
     }
 
     byPeriod.set(row.report_period, {
-      ...existing,
       ...Object.fromEntries(
         Object.entries(row).filter(([, value]) => value !== undefined),
+      ),
+      ...Object.fromEntries(
+        Object.entries(existing).filter(([, value]) => value !== undefined),
       ),
     });
   }
