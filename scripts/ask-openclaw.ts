@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { config } from 'dotenv';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -102,10 +103,33 @@ type OAuthModule = {
   ) => Promise<{ apiKey: string; newCredentials?: Partial<OAuthProfile> } | null>;
 };
 
+function resolveNpmPrefixOpenClawRoots(): string[] {
+  const roots = new Set<string>();
+
+  for (const npmBinary of ['npm', 'bun']) {
+    try {
+      const prefix = execFileSync(npmBinary, ['prefix', '-g'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (prefix) {
+        roots.add(path.join(prefix, 'lib', 'node_modules', 'openclaw'));
+        roots.add(path.join(prefix, 'node_modules', 'openclaw'));
+      }
+    } catch {
+      // ignore missing npm/bun or prefix lookup failures
+    }
+  }
+
+  return [...roots];
+}
+
 const OPENCLAW_ROOT_CANDIDATES = [
   process.env.OPENCLAW_ROOT,
+  ...resolveNpmPrefixOpenClawRoots(),
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
+  '/usr/local/lib/node_modules/openclaw',
 ].filter((value): value is string => !!value);
 function createDefaultSessionKey(): string {
   return `dexter:openclaw:${randomUUID()}`;

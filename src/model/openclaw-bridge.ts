@@ -3,6 +3,7 @@ import { StructuredToolInterface } from '@langchain/core/tools';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
@@ -10,10 +11,33 @@ import { resolveOpenClawAuthStorePath, resolveOpenClawProfileId } from '@/utils/
 
 const OPENCLAW_PROVIDER_ID = 'openai-codex';
 const OPENCLAW_MODEL_PREFIX = 'openai-codex:';
+function resolveNpmPrefixOpenClawRoots(): string[] {
+  const roots = new Set<string>();
+
+  for (const npmBinary of ['npm', 'bun']) {
+    try {
+      const prefix = execFileSync(npmBinary, ['prefix', '-g'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (prefix) {
+        roots.add(path.join(prefix, 'lib', 'node_modules', 'openclaw'));
+        roots.add(path.join(prefix, 'node_modules', 'openclaw'));
+      }
+    } catch {
+      // ignore missing npm/bun or prefix lookup failures
+    }
+  }
+
+  return [...roots];
+}
+
 const OPENCLAW_ROOT_CANDIDATES = [
   process.env.OPENCLAW_ROOT,
+  ...resolveNpmPrefixOpenClawRoots(),
   path.join(homedir(), '.npm-global/lib/node_modules/openclaw'),
   '/usr/lib/node_modules/openclaw',
+  '/usr/local/lib/node_modules/openclaw',
 ].filter((value): value is string => !!value);
 
 type OAuthProfile = {
