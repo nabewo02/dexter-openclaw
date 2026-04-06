@@ -114,6 +114,11 @@ export interface FreeUsNewsItem {
   source?: string;
 }
 
+export interface FreeUsNewsResult {
+  items: FreeUsNewsItem[];
+  sourceUrl: string;
+}
+
 function normalizeRssPubDate(value?: string): string | undefined {
   if (!value) return undefined;
   const parsed = Date.parse(value);
@@ -470,7 +475,7 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&#39;/g, "'");
 }
 
-export async function getFreeUsNews(ticker: string, limit = 5): Promise<FreeUsNewsItem[]> {
+export async function getFreeUsNewsResult(ticker: string, limit = 5): Promise<FreeUsNewsResult> {
   const upper = ticker.trim().toUpperCase();
   const { companyName } = await resolveSecCompany(upper);
   const query = encodeURIComponent(`"${companyName}" OR ${upper}`);
@@ -479,22 +484,30 @@ export async function getFreeUsNews(ticker: string, limit = 5): Promise<FreeUsNe
   const document = new DOMParser().parseFromString(xml, 'text/xml');
   const items = Array.from(document.querySelectorAll('item')) as Element[];
 
-  return items.slice(0, limit).map((item) => ({
-    title: decodeHtmlEntities(textContent(item.querySelector('title')) ?? ''),
-    link: textContent(item.querySelector('link')) ?? '',
-    publishedAt: normalizeRssPubDate(textContent(item.querySelector('pubDate'))),
-    source: textContent(item.querySelector('source')),
-  }));
+  return {
+    items: items.slice(0, limit).map((item) => ({
+      title: decodeHtmlEntities(textContent(item.querySelector('title')) ?? ''),
+      link: textContent(item.querySelector('link')) ?? '',
+      publishedAt: normalizeRssPubDate(textContent(item.querySelector('pubDate'))),
+      source: textContent(item.querySelector('source')),
+    })),
+    sourceUrl,
+  };
+}
+
+export async function getFreeUsNews(ticker: string, limit = 5): Promise<FreeUsNewsItem[]> {
+  const result = await getFreeUsNewsResult(ticker, limit);
+  return result.items;
 }
 
 export async function buildFreeUsPocReport(ticker: string): Promise<FreeUsPocReport> {
   const upper = ticker.trim().toUpperCase();
   const { cik, companyName } = await resolveSecCompany(upper);
-  const [price, filingsResult, financials, news] = await Promise.all([
+  const [price, filingsResult, financials, newsResult] = await Promise.all([
     getFreeUsPriceSnapshot(upper),
     getFreeUsFilingsResult(upper),
     getFreeUsFinancialSummary(upper),
-    getFreeUsNews(upper),
+    getFreeUsNewsResult(upper),
   ]);
 
   return {
@@ -504,7 +517,7 @@ export async function buildFreeUsPocReport(ticker: string): Promise<FreeUsPocRep
     price,
     filings: filingsResult.filings,
     financials,
-    news,
+    news: newsResult.items,
   };
 }
 

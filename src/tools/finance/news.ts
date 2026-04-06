@@ -1,7 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { api, shouldUseFreeUsData } from './api.js';
-import { getFreeUsNews } from './free-us-poc.js';
+import { getFreeUsNewsResult } from './free-us-poc.js';
 import { formatToolResult } from '../types.js';
 import { TTL_15M } from './utils.js';
 
@@ -22,15 +22,15 @@ export const getCompanyNews = new DynamicStructuredTool({
   schema: CompanyNewsInputSchema,
   func: async (input) => {
     if (shouldUseFreeUsData()) {
-      const news = await getFreeUsNews(input.ticker.trim().toUpperCase(), Math.min(input.limit, 10));
+      const result = await getFreeUsNewsResult(input.ticker.trim().toUpperCase(), Math.min(input.limit, 10));
       return formatToolResult(
-        news.map((item) => ({
+        result.items.map((item) => ({
           title: item.title,
           source: item.source,
           date: item.publishedAt,
           url: item.link,
         })),
-        [`https://news.google.com/rss/search?q=${encodeURIComponent(input.ticker.trim().toUpperCase())}`],
+        [result.sourceUrl],
       );
     }
     const params: Record<string, string | number | undefined> = {
