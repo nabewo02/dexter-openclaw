@@ -1,6 +1,7 @@
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { api } from './api.js';
+import { api, shouldUseFreeUsData } from './api.js';
+import { getFreeUsNewsResult } from './free-us-poc.js';
 import { formatToolResult } from '../types.js';
 import { TTL_15M } from './utils.js';
 
@@ -20,6 +21,18 @@ export const getCompanyNews = new DynamicStructuredTool({
     'Retrieves recent company news headlines for a stock ticker, including title, source, publication date, and URL. Use for company catalysts, price move explanations, press releases, and recent announcements.',
   schema: CompanyNewsInputSchema,
   func: async (input) => {
+    if (shouldUseFreeUsData()) {
+      const result = await getFreeUsNewsResult(input.ticker.trim().toUpperCase(), Math.min(input.limit, 10));
+      return formatToolResult(
+        result.items.map((item) => ({
+          title: item.title,
+          source: item.source,
+          date: item.publishedAt,
+          url: item.link,
+        })),
+        [result.sourceUrl],
+      );
+    }
     const params: Record<string, string | number | undefined> = {
       ticker: input.ticker.trim().toUpperCase(),
       limit: Math.min(input.limit, 10),

@@ -10,6 +10,7 @@ Dexter is an autonomous financial research agent that thinks, plans, and learns 
 - [✅ Prerequisites](#-prerequisites)
 - [💻 How to Install](#-how-to-install)
 - [🚀 How to Run](#-how-to-run)
+- [🔌 OpenClaw OAuth Bridge](#-openclaw-oauth-bridge)
 - [📊 How to Evaluate](#-how-to-evaluate)
 - [🐛 How to Debug](#-how-to-debug)
 - [📱 How to Use with WhatsApp](#-how-to-use-with-whatsapp)
@@ -36,7 +37,9 @@ Dexter takes complex financial questions and turns them into clear, step-by-step
 ## ✅ Prerequisites
 
 - [Bun](https://bun.com) runtime (v1.0 or higher)
-- OpenAI API key (get [here](https://platform.openai.com/api-keys))
+- One LLM path:
+  - standard mode: OpenAI / Anthropic / Gemini / xAI / OpenRouter API key, or
+  - OpenClaw bridge mode: an existing OpenClaw main-agent `openai-codex` OAuth profile on the same machine
 - Financial Datasets API key (get [here](https://financialdatasets.ai))
 - Exa API key (get [here](https://exa.ai)) - optional, for web search
 
@@ -106,6 +109,34 @@ Or with watch mode for development:
 ```bash
 bun dev
 ```
+
+Inside the TUI, you can now switch the model provider to **OpenClaw Codex** and use the local OpenClaw main-agent OAuth session instead of setting a separate OpenAI-compatible API key for Dexter's LLM path.
+
+## 🔌 OpenClaw OAuth Bridge
+
+This fork adds a headless entrypoint that reuses an existing OpenClaw main-agent `openai-codex` OAuth login, so you can run Dexter research queries without setting `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` just for the LLM layer.
+
+Run it like this:
+```bash
+bun run ask:openclaw -- "Compare Apple and Microsoft on revenue growth and operating margins"
+```
+
+You can also pass a session key or model:
+```bash
+bun run ask:openclaw -- --session dexter:earnings --model gpt-5.4-mini "Summarize the latest Tesla developments"
+```
+
+Notes:
+- This bridge still uses Dexter's normal tool registry.
+- If `FINANCIAL_DATASETS_API_KEY` is unset, Dexter now falls back to a **US-only free data mode** for core equity comparison flows using Yahoo Finance `chart`, SEC `company_tickers` / `companyfacts` / `submissions`, and Google News RSS.
+- The free fallback is best for ticker-vs-ticker fundamental comparison, recent price moves, and filing/news context; it is not a full replacement for normalized screener-quality datasets.
+- You can force the fallback explicitly with `DEXTER_FREE_US_MODE=1`.
+- SEC-backed fallback requests require a real contact string for `sec.gov`; set `DEXTER_SEC_USER_AGENT` or `DEXTER_SEC_CONTACT_EMAIL` if you do not want Dexter to infer one from local git config.
+- If your OpenClaw auth store lives outside the default `~/.openclaw/agents/main/agent/auth-profiles.json`, you can point Dexter at it with `OPENCLAW_STATE_DIR`, `OPENCLAW_AGENT_ID`, or `OPENCLAW_AUTH_STORE_PATH`.
+- If your auth store contains multiple `openai-codex` profiles, you can pin one explicitly with `OPENCLAW_AUTH_PROFILE_ID`.
+- `EXASEARCH_API_KEY`, `TAVILY_API_KEY`, `PERPLEXITY_API_KEY`, and `X_BEARER_TOKEN` are still optional enhancements.
+- The bridge is read-only by default; file writes, cron changes, heartbeat edits, and memory mutation tools stay disabled unless you set `DEXTER_OPENCLAW_ENABLE_MUTATIONS=1`.
+- The interactive TUI (`bun start`) can also use OpenClaw now: open the provider/model selector and pick **OpenClaw Codex**.
 
 ## 📊 How to Evaluate
 

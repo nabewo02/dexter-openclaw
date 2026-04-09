@@ -14,9 +14,33 @@ import type { TokenUsage } from '@/agent/types';
 import { logger } from '@/utils';
 import { classifyError, isNonRetryableError } from '@/utils/errors';
 import { resolveProvider, getProviderById } from '@/providers';
+import {
+  callOpenClawPrompt,
+  callOpenClawWithMessages,
+  isOpenClawModel,
+} from './openclaw-bridge.js';
 
 export const DEFAULT_PROVIDER = 'openai';
 export const DEFAULT_MODEL = 'gpt-5.4';
+
+const OPENCLAW_MUTATING_TOOL_NAMES = new Set([
+  'write_file',
+  'edit_file',
+  'heartbeat',
+  'cron',
+  'memory_update',
+]);
+
+function openClawMutationsEnabled(): boolean {
+  const value = process.env.DEXTER_OPENCLAW_ENABLE_MUTATIONS?.trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function filterOpenClawTools(tools?: StructuredToolInterface[]): StructuredToolInterface[] | undefined {
+  if (!tools?.length) return tools;
+  if (openClawMutationsEnabled()) return tools;
+  return tools.filter((tool) => !OPENCLAW_MUTATING_TOOL_NAMES.has(tool.name));
+}
 
 /**
  * Gets the fast model variant for the given provider.
@@ -133,6 +157,10 @@ export function getChatModel(
   modelName: string = DEFAULT_MODEL,
   streaming: boolean = false
 ): BaseChatModel {
+  if (isOpenClawModel(modelName)) {
+    throw new Error('OpenClaw Codex models are handled outside LangChain chat model factories.');
+  }
+
   const opts: ModelOpts = { streaming };
   const provider = resolveProvider(modelName);
   const factory = MODEL_FACTORIES[provider.id] ?? DEFAULT_FACTORY;
@@ -203,6 +231,25 @@ function buildAnthropicMessages(systemPrompt: string, userPrompt: string) {
 export async function callLlm(prompt: string, options: CallLlmOptions = {}): Promise<LlmResult> {
   const { model = DEFAULT_MODEL, systemPrompt, outputSchema, tools, signal } = options;
   const finalSystemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+
+  if (isOpenClawModel(model)) {
+    const safeTools = filterOpenClawTools(tools);
+    const result = await withRetry(
+      () => callOpenClawPrompt({
+        model,
+        prompt,
+        systemPrompt: finalSystemPrompt,
+        outputSchema,
+        tools: safeTools,
+        signal,
+      }),
+      'OpenClaw Codex',
+    );
+    return {
+      response: result.response as AIMessage | string,
+      usage: result.usage,
+    };
+  }
 
   const llm = getChatModel(model, false);
 
@@ -296,6 +343,18 @@ export async function callLlmWithMessages(
 ): Promise<LlmResult> {
   const { model = DEFAULT_MODEL, tools, signal } = options;
 
+  if (isOpenClawModel(model)) {
+    const result = await withRetry(
+      () => callOpenClawWithMessages(messages, {
+        model,
+        tools: filterOpenClawTools(tools),
+        signal,
+      }),
+      'OpenClaw Codex',
+    );
+    return { response: result.response, usage: result.usage };
+  }
+
   const llm = getChatModel(model, false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -338,6 +397,10 @@ export async function* streamLlmWithMessages(
   options: CallLlmWithMessagesOptions = {},
 ): AsyncGenerator<AIMessageChunk, void> {
   const { model = DEFAULT_MODEL, tools, signal } = options;
+
+  if (isOpenClawModel(model)) {
+    throw new Error('OpenClaw streaming is not supported; use the blocking LLM path instead.');
+  }
 
   const llm = getChatModel(model, true);
 
